@@ -1,153 +1,209 @@
 "use client";
-import { useState } from "react";
+import { useState,useEffect } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-
-interface Video {
-  id: string;
-  file: File;
-  thumbnail: string;
-  title: string;
+import { connectSocket,socket } from "../core/services/socket.service";
+import { UploadIcon } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
+import { base64ToBlob } from "../core/helpers/functions";
+interface IncomingData{
+  current_total_toll: number;
+  current_total_vehicles: number;
+  frame_vehicle_toll:number[];
+  processed_frame:string;
+  vehicle_counts:{
+    bus:number;
+    car:number;
+    motorbike:number;
+    truck:number;
+  }
 }
-
 export default function YouTubeUI() {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [videos, setVideos] = useState<Video[]>([]);
-  const router = useRouter();
+  const [data,setData] = useState<IncomingData>({
+    current_total_toll: 0,
+  current_total_vehicles: 0,
+  frame_vehicle_toll:[],
+  processed_frame:"",
+  vehicle_counts:{
+    bus:0,
+    car:0,
+    motorbike:0,
+    truck:0,
+  }
+  })
+  const [videoEnd,setVideoEnd] = useState<boolean>(false)
+  const[loading,setLoading] = useState<boolean>(false)
+   const sendVideoFrames = async (file: File): Promise<void> => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      try {
+        const result = await connectSocket();
+        if (result) {
+          return sendVideoFrames(file);
+        }
+      } catch (err) {
+        console.error("❌ Failed to connect before sending frames:", err);
+        return;
+      }
+    }
+  
+    const video = document.createElement("video");
+    video.src = URL.createObjectURL(file);
+    video.crossOrigin = "anonymous";
+    video.muted = true;
+    video.playsInline = true;
+  
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+  
+    video.addEventListener("loadeddata", () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+  
+      const fps = 2;
+      const interval = 1 / fps;
+      const duration = video.duration;
+      let currentTime = 0;
+  
+      const sendNextFrame = () => {
+        if (currentTime >= duration) {
+          setVideoEnd(true)
+          console.log("✅ All frames sent");
+          
+          URL.revokeObjectURL(video.src);
+          return;
+        }
+  
+        video.currentTime = currentTime;
+      };
+  
+      video.addEventListener("seeked", () => {
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const base64Image = canvas.toDataURL("image/jpeg", 0.7);
+  
+        if (socket && socket.readyState === WebSocket.OPEN) {
 
+          socket.send(JSON.stringify({ frame: base64Image }));
+          console.log(`📤 Sent frame at ${currentTime.toFixed(2)}s`);
+        }
+      });
+  
+      // Message listener to send next frame after receiving a response
+      socket!.onmessage = (event) => {
+        setLoading(false)
+        try {
+          
+          const data: IncomingData = JSON.parse(event.data);
+          const dataUrl = `data:image/jpeg;base64,${data.processed_frame}`;
+          const blob = base64ToBlob(dataUrl);
+          const url = URL.createObjectURL(blob);
+          setData({ ...data, processed_frame: url });
+          console.log(data,"data",currentTime,interval)
+          currentTime += interval;
+          sendNextFrame(); // send next frame after response
+        } catch (e) {
+          console.error("Error handling message:", e);
+        }
+      };
+  
+      sendNextFrame();
+    });
+  };
   // Handle video upload
   const handleVideoUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = event.target.files?.[0];
-    if (file && file.type.startsWith("video/")) {
-      const thumbnail = await generateThumbnail(file);
-      const newVideo: Video = {
-        id: crypto.randomUUID(),
-        file,
-        thumbnail,
-        title: file.name,
-      };
-      setVideos((prev) => [...prev, newVideo]);
-      console.log("Uploaded video:", newVideo);
+    if (file) {
+      setLoading(true)
+      setVideoEnd(false)
+      sendVideoFrames(file);
     }
+    
   };
+ 
+  // UseEffect to connect to WebSocket and listen for incoming messages
+  useEffect(() => {
+    let ws: WebSocket;
 
-  // Generate thumbnail from video
-  const generateThumbnail = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const video = document.createElement("video");
-      video.src = URL.createObjectURL(file);
-      video.currentTime = 1;
-      video.onloadeddata = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 160;
-        canvas.height = 90;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, 160, 90);
-          resolve(canvas.toDataURL("image/jpeg"));
-        } else {
-          resolve("/car.jpeg");
-        }
-        URL.revokeObjectURL(video.src);
-      };
-      video.onerror = () => resolve("/car.jpeg");
+    connectSocket().then((socket) => {
+      ws = socket;
     });
-  };
-
+    return () => {
+      if (ws) {
+        ws.close();
+        console.log("🔌 WebSocket connection closed");
+      }
+    };
+  }, []);
   return (
-    <div className="bg-[#0f0f0f] min-h-screen text-white">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-6 bg-[#0f0f0f] sticky top-0 z-10">
-        <div className="flex items-center space-x-2">
-          <label className="p-2 rounded-full bg-yellow-400 hover:bg-yellow-500 text-black cursor-pointer">
-            <span className="font-normal px-6 text-lg">Upload</span>
-            <input
-              type="file"
-              accept="video/*"
-              className="hidden"
-              onChange={handleVideoUpload}
-            />
-          </label>
-          <button
-            className="p-2 rounded-full bg-yellow-400 hover:bg-yellow-500 text-black"
-            onClick={() => router.push("/history")}
-          >
-            <span className="font-normal px-6 text-lg">History</span>
-          </button>
+    <div className="bg-light-ivory min-h-screen  px-6 pt-5 grid grid-cols-3 gap-5">
+      <div className="col-span-2 relative rounded-lg bg-black mb-4 w-full h-[680px] overflow-hidden">
+     
+            {videoEnd && <label className="text-white absolute top-[20px] left-[20px] z-30 w-[50px] h-[50px] cursor-pointer bg-black flex justify-center items-center rounded-[50px]">
+           <UploadIcon color="white" size={20} />
+          <input
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={handleVideoUpload}
+          />
+        </label>}
+            
+            {data?.processed_frame?.length>0&&!loading?
+          <Image
+          src={data?.processed_frame }
+          alt="Stream Banner Template"
+          className="w-full z-[1]"
+          fill
+        />:<div className="w-full h-full justify-center items-center flex">
+          {loading?<LoaderCircle color="white" size={48} className="custom-spin"/>:
+          <label className="p-2 text-white cursor-pointer">
+           <UploadIcon color="white" size={48} />
+          <input
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={handleVideoUpload}
+          />
+        </label>
+         }
         </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex px-6 py-2">
-        {/* Main Video Column */}
-        <div className="flex-1 mr-4">
-          {/* Main Video */}
-          <div className="rounded-lg overflow-hidden bg-black mb-4">
-            <Image
-              src="/car.jpeg"
-              alt="Stream Banner Template"
-              width={850}
-              height={480}
-              className="w-full"
-            />
+          }
+            
           </div>
-
-          {/* Video Title */}
-          <h1 className="text-2xl font-bold mb-2 text-white">
-            How to Design Live Streaming Banner Overlay (Photoshop Tutorial)
-          </h1>
-
-          {/* Description */}
-          <div className="bg-[#272727] p-4 rounded-lg mb-4">
-            <p className="text-sm text-gray-300 mb-2">
-              Description of your epic video goes here. Now I am going back to
-              the Lorem Ipsum text placeholder.
-            </p>
-            <p className="text-sm text-gray-300 mb-2">
-              Lorem Ipsum is simply dummy text of the printing and typesetting
-              industry. Lorem Ipsum has been the industry&apos;s standard dummy
-              text ever since the 1500s.
-            </p>
-            <p className="text-sm text-gray-300">
-              When an unknown printer took a galley of type and scrambled it to
-              make a type specimen book. It has survived not only five
-              centuries, but also the leap into electronic typesetting,
-              remaining essentially unchanged. It was popularised in the 1960s
-              with the release of Letraset sheets containing Lorem Ipsum
-              passages.
-            </p>
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="w-96">
-          {/* Related Videos */}
-          <div className="space-y-2">
-            {[1].map((index) => (
-              <div
-                key={index}
-                className="bg-[#212121] hover:bg-[#272727] rounded-lg flex overflow-hidden"
-              >
-                <div className="relative w-40 h-24">
-                  <Image
-                    src="/car.jpeg"
-                    alt="Video thumbnail"
-                    width={160}
-                    height={90}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="p-2">
-                  <h4 className="font-medium text-sm text-white">
-                    How to earn money while dancing. Earned 50K$ (Click me)
-                  </h4>
-                </div>
+      <div className="flex flex-col gap-5 text-black w-full ">
+      <div
+              className="shadow-box bg-gray flex gap-1 w-full rounded-2xl p-[30px]"
+            >
+              <h3 className="text-lg font-bold">Total Toll:</h3>
+              <span className="text-lg">{data?.current_total_toll}</span>
+              
+            </div>
+            <div
+              className="shadow-box bg-gray flex gap-1 w-full rounded-2xl p-[30px]"
+            >
+              <h3 className="text-lg font-bold">Total Vehicles:</h3>
+              <span className="text-lg">{data?.current_total_vehicles}</span>
+              
+            </div>
+            <div
+              className="shadow-box bg-gray flex gap-1 w-full rounded-2xl p-[30px]"
+            >
+              <h3 className="text-lg font-bold">Frame Vehicle Tol:</h3>
+              <span className="text-lg">{data?.frame_vehicle_toll[0] ||0}</span>
+              
+            </div>
+            <div
+              className="shadow-box bg-gray flex flex-col gap-1 w-full rounded-2xl p-[30px]"
+            >
+              <h3 className="text-lg font-bold">Vehicle Counts</h3>
+              <div className="flex flex-col ">
+              <span className="text-base">Bus: {data?.vehicle_counts?.bus ||0}</span>
+              <span className="text-base">Car: {data?.vehicle_counts?.car ||0}</span>
+              <span className="text-base">Bike: {data?.vehicle_counts?.motorbike ||0}</span>
+              <span className="text-base">Truck: {data?.vehicle_counts?.truck ||0}</span>
               </div>
-            ))}
-          </div>
-        </div>
+              
+            </div>
       </div>
     </div>
   );
