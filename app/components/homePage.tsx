@@ -15,7 +15,8 @@ interface IncomingData{
     car:number;
     motorbike:number;
     truck:number;
-  }
+  },
+  liscense_plate:string;
 }
 export default function YouTubeUI() {
   const [data,setData] = useState<IncomingData>({
@@ -28,7 +29,8 @@ export default function YouTubeUI() {
     car:0,
     motorbike:0,
     truck:0,
-  }
+  },
+  liscense_plate:""
   })
   const [videoEnd,setVideoEnd] = useState<boolean>(false)
   const[loading,setLoading] = useState<boolean>(false)
@@ -95,7 +97,7 @@ export default function YouTubeUI() {
           const dataUrl = `data:image/jpeg;base64,${data.processed_frame}`;
           const blob = base64ToBlob(dataUrl);
           const url = URL.createObjectURL(blob);
-          setData({ ...data, processed_frame: url });
+          setData({ ...data, processed_frame: url,liscense_plate:data?.liscense_plate || "" });
           console.log(data,"data",currentTime,interval)
           currentTime += interval;
           sendNextFrame(); // send next frame after response
@@ -188,8 +190,15 @@ export default function YouTubeUI() {
             <div
               className="shadow-box bg-gray flex gap-1 w-full rounded-2xl p-[30px]"
             >
-              <h3 className="text-lg font-bold">Frame Vehicle Tol:</h3>
+              <h3 className="text-lg font-bold">Vehicle Tol:</h3>
               <span className="text-lg">{data?.frame_vehicle_toll[0] ||0}</span>
+              
+            </div>
+            <div
+              className="shadow-box bg-gray flex gap-1 w-full rounded-2xl p-[30px]"
+            >
+              <h3 className="text-lg font-bold">Number Plate</h3>
+              <span className="text-lg">{data?.liscense_plate}</span>
               
             </div>
             <div
