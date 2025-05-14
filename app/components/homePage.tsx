@@ -92,7 +92,8 @@ export default function YouTubeUI() {
         try {
           
           const data: IncomingData = JSON.parse(event.data);
-          const dataUrl = `data:image/jpeg;base64,${data.processed_frame}`;
+          const dataUrl = `data:image/jpeg;base64,${data?.processed_frame ||""}`;
+
           const blob = base64ToBlob(dataUrl);
           const url = URL.createObjectURL(blob);
           setData({ ...data, processed_frame: url });
