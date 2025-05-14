@@ -113,21 +113,22 @@ export default function YouTubeUI() {
   const handleVideoUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
+    setData({
+      current_total_toll: 0,
+current_total_vehicles: 0,
+frame_vehicle_toll:[],
+processed_frame:"",
+vehicle_counts:{
+  bus:0,
+  car:0,
+  motorbike:0,
+  truck:0,
+},
+liscense_plate:""
+    })
     const file = event.target.files?.[0];
     if (file) {
-      setData({
-        current_total_toll: 0,
-  current_total_vehicles: 0,
-  frame_vehicle_toll:[],
-  processed_frame:"",
-  vehicle_counts:{
-    bus:0,
-    car:0,
-    motorbike:0,
-    truck:0,
-  },
-  liscense_plate:""
-      })
+      
       setLoading(true)
       setVideoEnd(false)
       sendVideoFrames(file);
